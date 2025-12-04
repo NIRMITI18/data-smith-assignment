@@ -32,7 +32,6 @@ async def process_image(file: UploadFile = File(...)):
     """
     try:
         image_bytes = await file.read()
-        # Reuse the same helper as Streamlit side for consistency
         text_with_conf = extract_text_from_image(io.BytesIO(image_bytes))
         return {"text": text_with_conf}
     except Exception as e:
@@ -78,9 +77,6 @@ import os
 import google.generativeai as genai
 import re
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
-from phi.agent import Agent
-from phi.model.google import Gemini
-from phi.tools.youtube_tools import YouTubeTools
 from PIL import Image
 import PyPDF2
 import pytesseract
@@ -217,11 +213,10 @@ Your job:
         return f"❌ AI Error: {str(e)}"
 
 
-
 # -------------------------------------
 # YOUTUBE HELPERS
 # -------------------------------------
-def extract_video_id(url):
+def extract_video_id(url: str):
     patterns = [
         r"v=([^&]+)", r"youtu\.be/([^?]+)",
         r"shorts/([^?]+)", r"embed/([^?]+)"
@@ -233,21 +228,25 @@ def extract_video_id(url):
     return None
 
 
-def extract_transcript_details(url):
+def extract_transcript_details(url: str) -> str:
     """
-    Uses phi Agent + Gemini to summarize a YouTube URL.
+    Fetches the raw transcript text for a YouTube URL using youtube-transcript-api.
+    This text is then used as context for the Gemini agent.
     """
-    try:
-        agent = Agent(
-            model=Gemini(id="gemini-2.5-flash"),
-            tools=[YouTubeTools()],
-            show_tool_calls=True
-        )
-        response = agent.run(f"Fetch transcript and summarize this YouTube video: {url}")
-        return response.text if hasattr(response, "text") else str(response)
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
+    video_id = extract_video_id(url)
+    if not video_id:
+        return "❌ Could not extract video ID from the URL. Please check the URL."
 
+    try:
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        text = " ".join([item["text"] for item in transcript])
+        return text
+    except TranscriptsDisabled:
+        return "❌ Transcripts are disabled for this video."
+    except NoTranscriptFound:
+        return "❌ No transcript found for this video."
+    except Exception as e:
+        return f"❌ Error while fetching transcript: {str(e)}"
 
 
 # -------------------------------------
@@ -289,7 +288,6 @@ def extract_text_from_image(image_file):
         return f"❌ Image OCR Error: {str(e)}"
 
 
-
 # -------------------------------------
 # PDF TEXT + CONFIDENCE (PyPDF2 + pytesseract)
 # -------------------------------------
@@ -329,7 +327,6 @@ def extract_text_from_pdf(pdf_file):
         return f"❌ PDF OCR Error: {str(e)}"
 
 
-
 # -------------------------------------
 # AUDIO → TEXT → SUMMARY PIPELINE
 # -------------------------------------
@@ -366,7 +363,6 @@ def extract_text_from_audio(audio_file):
 
     except Exception as e:
         return f"❌ Audio Error: {str(e)}"
-
 
 
 # -------------------------------------
